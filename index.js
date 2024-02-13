@@ -1,6 +1,7 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import { PassThrough } from 'stream';
 
 dotenv.config();
 
@@ -26,13 +27,28 @@ app.get('/latest-release/:name', async (req, res) => {
         }
         
         const releaseData = await response.json();
-        const assetName = req.params.name;
-        const dmgLink = releaseData.assets.find(asset => asset.name === assetName);
+        const assetName = req.params.name; // Get the asset name from the route parameter
+        const asset = releaseData.assets.find(asset => asset.name === assetName);
         
-        if (dmgLink && dmgLink.browser_download_url) {
-            res.redirect(dmgLink.browser_download_url);
+        
+        if (asset && asset.url) {
+            const assetResponse = await fetch(asset.url, {
+                headers: {
+                    ...headers,
+                    'Accept': 'application/octet-stream'
+                }
+            });
+
+            if (!assetResponse.ok) {
+                throw new Error("Failed to download the asset.");
+            }
+
+            res.setHeader('Content-Disposition', `attachment; filename=${assetName}`);
+            const passThrough = new PassThrough();
+            assetResponse.body.pipe(passThrough);
+            passThrough.pipe(res);
         } else {
-            res.status(404).send(`Asset with name format "${assetName}" not found in the latest release.`);
+            res.status(404).send(`Asset with name "${assetName}" not found in the latest release.`);
         }
     } catch (error) {
         console.error(error);
